@@ -1,0 +1,66 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: spire
+  namespace: argocd
+  labels:
+    app.kubernetes.io/part-of: gitops-spire
+    app.kubernetes.io/managed-by: argocd
+spec:
+  project: default
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: spire
+  source:
+    repoURL: https://spiffe.github.io/helm-charts-hardened/
+    chart: spire
+    targetRevision: 0.30.4
+    helm:
+      releaseName: spire
+      values: |
+        # Lab identity namespace. Change before production and keep stable thereafter.
+        spire-server:
+          clusterName: docker-desktop
+          trustDomain: ai-cloud.local
+          image:
+            tag: "1.15.5"
+          logLevel: info
+          auditLogEnabled: true
+          federation:
+            enabled: false
+          controllerManager:
+            enabled: false
+          persistence:
+            type: pvc
+            size: 1Gi
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+
+        spire-agent:
+          clusterName: docker-desktop
+          trustDomain: ai-cloud.local
+          image:
+            tag: "1.15.5"
+          logLevel: info
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 300m
+              memory: 256Mi
+
+        # Keep optional components disabled for the first installation.
+        spiffe-oidc-discovery-provider:
+          enabled: false
+        tornjak-frontend:
+          enabled: false
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+      - PruneLast=true
