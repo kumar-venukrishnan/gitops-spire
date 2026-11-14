@@ -20,7 +20,7 @@ spec:
       values: |
         # Lab identity namespace. Change before production and keep stable thereafter.
         spire-server:
-          clusterName: docker-desktop
+          clusterName: k8s-poc
           trustDomain: myorg.local
           image:
             tag: "1.15.5"
@@ -42,7 +42,7 @@ spec:
               memory: 512Mi
 
         spire-agent:
-          clusterName: docker-desktop
+          clusterName: k8s-poc
           trustDomain: myorg.local
           image:
             tag: "1.15.5"
