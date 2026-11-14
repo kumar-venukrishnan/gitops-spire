@@ -21,7 +21,7 @@ spec:
         # Lab identity namespace. Change before production and keep stable thereafter.
         spire-server:
           clusterName: docker-desktop
-          trustDomain: ai-cloud.local
+          trustDomain: myorg.local
           image:
             tag: "1.15.5"
           logLevel: info
@@ -43,7 +43,7 @@ spec:
 
         spire-agent:
           clusterName: docker-desktop
-          trustDomain: ai-cloud.local
+          trustDomain: myorg.local
           image:
             tag: "1.15.5"
           logLevel: info
