@@ -1,73 +1,229 @@
 # gitops-spire
 
-Standalone GitOps repository for a small SPIFFE/SPIRE Kubernetes lab, intended to coexist with an existing Argo CD + Kustomize platform repository.
+Standalone GitOps repository for deploying and managing SPIFFE/SPIRE on Kubernetes using **Argo CD, Kustomize and Helm**.
 
-**Target cluster:** Docker Desktop Kubernetes, single node  
-**Namespace:** `spire`  
-**SPIFFE trust domain:** `myorg.local` (lab-only; choose a stable DNS-like trust domain before production)  
-**Cluster name:** `k8s-poc`  
-**Git branch to create:** `main`
+This repository is intentionally separate from the existing platform PoC GitOps repository. It allows SPIRE to be enabled, disabled, upgraded and managed independently.
 
-## Important design choices
+## Environment
 
-- This repository is separate from the existing PoC GitOps repository.
-- The repository's Kustomize root deploys only an Argo CD `Application`.
-- That Application installs the SPIFFE-maintained `spire` umbrella Helm chart from the `helm-charts-hardened` project.
-- The Helm chart is beta and its values/API can change. The chart release is pinned to `0.30.4`; do not track `main`.
-- The chart release metadata reports SPIRE `1.15.5`. This is deliberately pinned as a known chart/application pairing. Review the chart release and SPIRE release notes before upgrading.
-- No Authentik, OpenBao, Access Broker, Step CA, cert-manager, or existing namespaces are modified.
-- No ingress, NodePort, LoadBalancer, external endpoint, or cross-cluster federation is enabled.
+| Setting | Value |
+|---|---|
+| Kubernetes platform | Docker Desktop Kubernetes |
+| Kubernetes topology | Single node |
+| Kubernetes namespace | `spire` |
+| Argo CD namespace | `argocd` |
+| GitHub repository | `https://github.com/kumar-venukrishnan/gitops-spire.git` |
+| Git branch | `main` |
+| SPIFFE trust domain | `myorg.local` |
+| SPIRE cluster name | `k8s-poc` |
+| SPIRE Helm chart | `spire` |
+| Helm chart version | `0.30.4` |
+| SPIRE application version | `1.15.5` |
+
+The trust domain and cluster name are stable logical identifiers. `k8s-poc` does not need to match the actual Docker Desktop Kubernetes context name.
+
+`myorg.local` is a lab trust domain, not a production domain recommendation.
+
+---
+
+## 1. Architecture and GitOps design
+
+This repository uses two Argo CD Applications.
+
+### Parent Application: `gitops-spire`
+
+The parent Application monitors this GitHub repository and branch.
+
+It deploys the Kustomize configuration under `bootstrap/`.
+
+### Child Application: `spire`
+
+The child Application is created by the parent Application.
+
+It retrieves the SPIRE Helm chart from the hardened SPIFFE Helm chart repository and installs SPIRE into the dedicated `spire` namespace.
+
+### Deployment flow
+
+```text
+GitHub Repository
+gitops-spire
+main branch
+      |
+      v
+Argo CD Parent Application
+gitops-spire
+      |
+      | Monitors bootstrap/
+      v
+Kustomize
+bootstrap/kustomization.yaml
+      |
+      v
+Argo CD Child Application
+spire
+      |
+      | Retrieves Helm chart
+      v
+SPIFFE Hardened Helm Repository
+https://spiffe.github.io/helm-charts-hardened/
+      |
+      v
+SPIRE Helm Chart 0.30.4
+      |
+      v
+Kubernetes Namespace: spire
+      |
+      +---- SPIRE Server
+      |
+      +---- SPIRE Agent
+```
+
+### Application responsibilities
+
+| Application | Responsibility |
+|---|---|
+| `gitops-spire` | Monitors GitHub and manages the child Application |
+| `spire` | Installs and reconciles SPIRE Helm chart resources |
+
+The parent Application is deployed once using `kubectl apply`.
+
+After that, Argo CD monitors the repository and manages subsequent changes.
+
+**Important:** The parent Application is deployed into the existing `argocd` namespace. The child Application deploys SPIRE into `spire`.
+
+---
+
+## 2. Important design choices
+
+- SPIRE has its own GitHub repository, separate from the existing PoC GitOps repository.
+- The parent Application monitors the `main` branch.
+- The parent Application uses Kustomize to deploy the child Application.
+- The child Application installs the SPIRE Helm chart.
+- The Helm chart version is pinned to `0.30.4`; do not track the chart repository's `main` branch.
+- Chart release metadata reports SPIRE `1.15.5`.
+- The chart is beta. Review its release notes and values before upgrading.
+- SPIRE Server and Agent use the configured trust domain `myorg.local`.
+- The logical SPIRE Kubernetes cluster name is `k8s-poc`.
+- SPIRE is isolated in its own Kubernetes namespace.
+- No existing Authentik, OpenBao, Access Broker, Step CA, cert-manager or other PoC resources are modified.
+- No Ingress, NodePort, LoadBalancer or external SPIRE Server endpoint is enabled.
+- OIDC Discovery Provider and Tornjak are disabled in the initial configuration.
+- Cross-cluster federation is not enabled.
 - The initial installation is a learning environment, not a production deployment.
 
-Official documentation:
+### Official documentation
+
 - Kubernetes quickstart: https://spiffe.io/docs/latest/try/getting-started-k8s/
-- SPIRE downloads and chart guidance: https://spiffe.io/downloads/
+- SPIRE downloads: https://spiffe.io/downloads/
 - Hardened Helm charts: https://github.com/spiffe/helm-charts-hardened
-- SPIRE release notes: https://github.com/spiffe/spire/releases
+- Helm chart repository: https://spiffe.github.io/helm-charts-hardened/
+- SPIRE releases: https://github.com/spiffe/spire/releases
 
-> Compatibility note: SPIFFE's current Kubernetes quickstart states it has been tested with Kubernetes 1.29–1.34. Your cluster reports Kubernetes 1.36.1. The chart declares a Kubernetes floor, but that does not prove every SPIRE integration has been tested on 1.36.1. Treat the first sync as a compatibility test; inspect Argo CD and pod events before proceeding.
+### Kubernetes compatibility note
 
-## Repository layout
+The SPIFFE Kubernetes quickstart has documented testing against Kubernetes versions 1.29–1.34.
+
+The existing Docker Desktop cluster reports Kubernetes 1.36.1.
+
+Although the chart declares a Kubernetes compatibility floor, this does not establish that all SPIRE integrations have been tested on Kubernetes 1.36.1.
+
+Treat the first deployment as a compatibility test. Inspect Argo CD sync status, Kubernetes events and SPIRE pod logs before proceeding.
+
+---
+
+## 3. Repository structure
+
+The expected repository layout is:
 
 ```text
 gitops-spire/
-├── README.md
 ├── .gitignore
-├── argocd/
+├── README.md
+│
+├── bootstrap/
+│   ├── README.md
+│   ├── root-application.yaml
 │   ├── application.yaml
 │   └── kustomization.yaml
-├── bootstrap/
-│   ├── kustomization.yaml
-│   └── README.md
+│
 ├── docs/
 │   ├── architecture.md
 │   ├── operations.md
 │   └── troubleshooting.md
+│
 └── examples/
     └── README.md
 ```
 
-## 1. Create the GitHub repository
+### File responsibilities
 
-Create an **empty** repository named `gitops-spire` under your GitHub account. Use `main` as the default branch. Do not add a README or license on GitHub because this ZIP already contains them.
+| File | Purpose |
+|---|---|
+| `bootstrap/root-application.yaml` | Parent Argo CD Application |
+| `bootstrap/application.yaml` | Child Argo CD Application that installs SPIRE |
+| `bootstrap/kustomization.yaml` | Kustomize root referencing the child Application |
+| `bootstrap/README.md` | Bootstrap instructions |
+| `docs/architecture.md` | Architecture and component design |
+| `docs/operations.md` | Operational procedures |
+| `docs/troubleshooting.md` | Troubleshooting guidance |
+| `examples/README.md` | Future workload identity and mTLS exercises |
 
-Extract this ZIP, then upload/push the extracted contents to the new repository's `main` branch using your preferred GitHub workflow.
+---
 
-The expected repository URL is:
+## 4. Configure the GitHub repository
+
+Create the GitHub repository:
 
 ```text
 https://github.com/kumar-venukrishnan/gitops-spire
 ```
 
-## 2. Update the repository URL if necessary
+Use `main` as the default branch.
 
-The Argo CD Application uses the expected URL above. If you create the repository under a different owner, edit:
+Upload the extracted repository contents to the root of the GitHub repository.
 
-`bootstrap/application.yaml`
+Make sure the `bootstrap` directory contains all three files:
 
-and change `spec.source.repoURL`.
+```text
+bootstrap/
+├── root-application.yaml
+├── application.yaml
+└── kustomization.yaml
+```
 
-## 3. Validate locally before applying
+### Important: Two different repository URLs
+
+The parent and child Applications use different source URLs.
+
+**Parent Application: `bootstrap/root-application.yaml`**
+
+```yaml
+source:
+  repoURL: https://github.com/kumar-venukrishnan/gitops-spire.git
+  targetRevision: main
+  path: bootstrap
+```
+
+This points to your GitHub repository.
+
+**Child Application: `bootstrap/application.yaml`**
+
+```yaml
+source:
+  repoURL: https://spiffe.github.io/helm-charts-hardened/
+  chart: spire
+  targetRevision: 0.30.4
+```
+
+This points to the SPIRE Helm chart repository.
+
+Do not replace the child Application's Helm repository URL with the GitHub URL.
+
+If the GitHub repository is private, configure repository credentials in Argo CD before bootstrapping.
+
+---
+
+## 5. Validate the repository locally
 
 From the extracted repository directory:
 
@@ -76,127 +232,207 @@ kubectl version
 kubectl kustomize bootstrap
 ```
 
-The Kustomize output should contain one Argo CD `Application` named `spire`.
+The Kustomize output should contain one Argo CD Application:
 
-Check that Argo CD is installed and that its Application CRD exists:
+```text
+kind: Application
+metadata:
+  name: spire
+```
+
+Confirm Argo CD is installed:
 
 ```bash
 kubectl get crd applications.argoproj.io
 kubectl get pods -n argocd
 ```
 
-## 4. Enable SPIRE
-
-Apply the standalone bootstrap:
+Check the current Kubernetes context:
 
 ```bash
-kubectl apply -k bootstrap/
+kubectl config current-context
 ```
 
-This creates an Argo CD Application named `spire`. Argo CD then installs the chart into the dedicated `spire` namespace.
+The destination server configured in both Applications is:
 
-Watch the Application and workloads:
+```text
+https://kubernetes.default.svc
+```
+
+This tells Argo CD to deploy to the same Kubernetes cluster where Argo CD is running.
+
+No Kubernetes authentication token needs to be embedded in the Application manifests.
+
+---
+
+## 6. Bootstrap the parent Application
+
+The parent Application must be applied directly because it is not included in the child Kustomize resources.
+
+Run:
+
+```bash
+kubectl apply -f \
+  https://raw.githubusercontent.com/kumar-venukrishnan/gitops-spire/main/bootstrap/root-application.yaml
+```
+
+This creates:
+
+```text
+Application: gitops-spire
+Namespace:   argocd
+```
+
+The parent Application then retrieves the Git repository and deploys the child Application.
+
+Check the Applications:
 
 ```bash
 kubectl get applications -n argocd
-kubectl get pods -n spire -w
-kubectl get pvc -n spire
 ```
 
-Expected core components are SPIRE Server and SPIRE Agent. Depending on the chart's pinned defaults, supporting chart components may also be installed. Review the rendered resources in Argo CD before accepting the first sync.
+Expected:
 
-## 5. Validate the installation
+```text
+NAME          SYNC STATUS   HEALTH STATUS
+gitops-spire  Synced        Healthy
+spire         Synced        Healthy
+```
+
+The actual status may initially show `Progressing`, `OutOfSync` or `Missing` while resources are being created.
+
+Inspect the parent:
+
+```bash
+kubectl describe application gitops-spire -n argocd
+```
+
+Inspect the child:
+
+```bash
+kubectl describe application spire -n argocd
+```
+
+Alternatively, use the Argo CD UI:
+
+1. Open `https://argocd.myorg.local`.
+2. Log in.
+3. Locate `gitops-spire`.
+4. Check its sync and health status.
+5. Locate the child Application `spire`.
+
+---
+
+## 7. Namespace creation
+
+The child Application targets:
+
+```yaml
+destination:
+  server: https://kubernetes.default.svc
+  namespace: spire
+```
+
+Its sync options should include:
+
+```yaml
+syncOptions:
+  - CreateNamespace=true
+```
+
+Argo CD creates the `spire` namespace automatically if it does not already exist.
+
+No manual namespace creation is necessary.
+
+Verify:
+
+```bash
+kubectl get namespace spire
+```
+
+---
+
+## 8. Validate the SPIRE installation
+
+Check all resources:
 
 ```bash
 kubectl get all -n spire
+```
+
+Check configuration and persistent storage:
+
+```bash
 kubectl get serviceaccount,configmap,secret,pvc -n spire
+```
+
+Check events:
+
+```bash
 kubectl get events -n spire --sort-by=.lastTimestamp
 ```
 
-Inspect logs:
+Check SPIRE Server logs:
 
 ```bash
-kubectl logs -n spire statefulset/spire-server --all-containers=true
+kubectl logs -n spire statefulset/spire-server \
+  --all-containers=true
+```
+
+Check the Agent DaemonSet:
+
+```bash
 kubectl get daemonset -n spire
+```
+
+List the SPIRE pods:
+
+```bash
 kubectl get pods -n spire -o wide
 ```
 
-The precise resource names can vary with chart release. Use `kubectl get pods -n spire` to identify pod names before reading agent logs:
+Use the actual Agent pod name when inspecting logs:
 
 ```bash
-kubectl logs -n spire <spire-agent-pod-name> --all-containers=true
+kubectl logs -n spire <spire-agent-pod-name> \
+  --all-containers=true
 ```
 
-## 6. Workload identity demo
+The precise resource names can vary with the pinned chart release.
 
-The first deployment intentionally does **not** automatically register identities for every namespace or ServiceAccount. That is a security boundary: workloads should receive identities only after explicit registration/selection.
+---
 
-Use the SPIRE chart's documentation for its installed release and choose one of these next steps:
+## 9. Validate SPIRE Server health
 
-1. Create a narrowly scoped workload registration entry for a dedicated test namespace and dedicated ServiceAccount; or
-2. Enable/configure SPIRE Controller Manager and a `ClusterSPIFFEID` policy after reviewing its CRDs and selector semantics.
-
-Do not grant a broad default identity to all pods or all ServiceAccounts. The `examples/` directory explains the planned two-workload mTLS exercise but deliberately does not deploy a permissive identity policy.
-
-## 7. Enable / disable model
-
-This is a separate Argo CD Application, so it is independent of the existing root application.
-
-**Pause GitOps reconciliation only** (workloads continue running):
+Run:
 
 ```bash
-argocd app set spire --sync-policy none
+kubectl exec -n spire spire-server-0 -- \
+  /opt/spire/bin/spire-server healthcheck
 ```
 
-**Resume automated reconciliation** (if desired):
+List registered entries:
 
 ```bash
-argocd app set spire --sync-policy automated
+kubectl exec -n spire spire-server-0 -- \
+  /opt/spire/bin/spire-server entry show
 ```
 
-**Remove the Argo CD Application but leave managed resources orphaned** (workloads continue running and are no longer reconciled):
+The initial installation intentionally does not register identities for every namespace or ServiceAccount.
 
-```bash
-argocd app delete spire --cascade=false
-```
+---
 
-**Full uninstall** (destructive; deletes the chart-managed resources and namespace, and may remove SPIRE state):
+## 10. Workload identity demo
 
-```bash
-argocd app delete spire --cascade
-```
+The first deployment intentionally does not automatically register identities for every namespace or ServiceAccount.
 
-Before a full uninstall, export any registration entries and back up the SPIRE server datastore/PVC. Do not use full uninstall as a routine pause mechanism.
+This is an important security boundary.
 
-To reinstall after a full uninstall:
+Workloads should receive SPIFFE identities only after explicit registration and selector configuration.
 
-```bash
-kubectl apply -k bootstrap/
-```
+The next stage will implement one of the following:
 
-## 8. Resource sizing
+1. A narrowly scoped workload registration entry for a dedicated test namespace and ServiceAccount.
+2. SPIRE Controller Manager and a `ClusterSPIFFEID` policy after reviewing its CRDs and selector semantics.
 
-The chart values in `bootstrap/application.yaml` set conservative starting requests/limits for a single-node lab. They are not official minimums. Check actual use after installation:
-
-```bash
-kubectl top nodes
-kubectl top pods -n spire
-```
-
-Your Docker Desktop Kubernetes allocation is approximately 7.748 GiB, not the full 16 GB physical Mac memory. Existing pods can use more than their requests, so watch actual memory and events.
-
-## 9. Security and production gaps
-
-This lab is not production-ready. Before production use, design and test:
-
-- HA SPIRE Server and a supported external datastore strategy.
-- Backup/restore and CA key protection.
-- Restricted workload registration and Kubernetes RBAC.
-- Node attestation appropriate to the platform (PSAT in this Kubernetes lab is not hardware-rooted attestation).
-- Agent socket access controls and workload isolation.
-- Trust-domain naming, federation and key rotation.
-- Monitoring, audit retention, alerting and upgrade/rollback procedures.
-- NetworkPolicy after verifying the chart's ports, DNS and kubelet/API dependencies.
-- Compatibility testing against the exact Kubernetes and container runtime versions.
-
-Do not reuse `ai-cloud.local` as a production trust domain without an explicit naming and federation design.
+Do not grant a broad default identity to all Pods or
