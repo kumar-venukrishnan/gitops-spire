@@ -4,8 +4,8 @@ Standalone GitOps repository for a small SPIFFE/SPIRE Kubernetes lab, intended t
 
 **Target cluster:** Docker Desktop Kubernetes, single node  
 **Namespace:** `spire`  
-**SPIFFE trust domain:** `ai-cloud.local` (lab-only; choose a stable DNS-like trust domain before production)  
-**Cluster name:** `docker-desktop`  
+**SPIFFE trust domain:** `myorg.local` (lab-only; choose a stable DNS-like trust domain before production)  
+**Cluster name:** `k8s-poc`  
 **Git branch to create:** `main`
 
 ## Important design choices
