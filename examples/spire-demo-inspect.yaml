@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: spire-demo-inspect
+  namespace: spire-demo
+spec:
+  serviceAccountName: spire-demo
+  containers:
+    - name: inspect
+      image: ghcr.io/spiffe/spire-agent:1.15.5
+      command: ["/bin/sh", "-c", "sleep 3600"]
+      volumeMounts:
+        - name: spiffe-workload-api
+          mountPath: /run/spire/sockets
+          readOnly: true
+  volumes:
+    - name: spiffe-workload-api
+      csi:
+        driver: csi.spiffe.io
+        readOnly: true
