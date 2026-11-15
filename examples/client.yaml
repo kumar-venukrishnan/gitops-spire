@@ -29,26 +29,74 @@ spec:
 
   containers:
     - name: tls-client
-      image: alpine:3.22
+      image: python:3.12-alpine
       command:
-        - /bin/sh
+        - python
+        - -u
         - -c
       args:
         - |
-          apk add --no-cache openssl
-          while true; do
-            echo "Connecting to SPIRE mTLS server..."
-            openssl s_client \
-              -connect spire-mtls-server.spire-demo.svc.cluster.local:8443 \
-              -CAfile /svid/bundle.0.pem \
-              -cert /svid/svid.0.pem \
-              -key /svid/svid.0.key \
-              -verify_return_error \
-              -verify 1 \
-              -brief </dev/null
-            echo "Connection attempt completed. Retrying in 10 seconds..."
-            sleep 10
-          done
+          import socket
+          import ssl
+          import time
+
+          EXPECTED_SERVER_ID = "spiffe://myorg.local/ns/spire-demo/sa/spire-server"
+          SERVER_ADDRESS = "spire-mtls-server.spire-demo.svc.cluster.local"
+          SERVER_PORT = 8443
+
+          context = ssl.create_default_context(
+              ssl.Purpose.SERVER_AUTH,
+              cafile="/svid/bundle.0.pem"
+          )
+          context.check_hostname = False
+          context.verify_mode = ssl.CERT_REQUIRED
+          context.load_cert_chain("/svid/svid.0.pem", "/svid/svid.0.key")
+
+          print("SPIRE mTLS client started")
+          print("Expected server SPIFFE ID:", EXPECTED_SERVER_ID)
+
+          while True:
+              try:
+                  with socket.create_connection(
+                      (SERVER_ADDRESS, SERVER_PORT), timeout=10
+                  ) as raw:
+                      with context.wrap_socket(
+                          raw, server_hostname=SERVER_ADDRESS
+                      ) as tls:
+
+                          peer = tls.getpeercert()
+                          uri_sans = [
+                              value for kind, value in peer.get("subjectAltName", [])
+                              if kind == "URI"
+                          ]
+
+                          print("Server SPIFFE identities:", uri_sans)
+
+                          if EXPECTED_SERVER_ID not in uri_sans:
+                              raise ssl.SSLError(
+                                  "Server SPIFFE identity is not authorized"
+                              )
+
+                          print("SERVER IDENTITY VERIFIED")
+
+                          tls.sendall(
+                              b"GET / HTTP/1.1\r\n"
+                              b"Host: spire-mtls-server\r\n"
+                              b"Connection: close\r\n\r\n"
+                          )
+
+                          while True:
+                              chunk = tls.recv(4096)
+                              if not chunk:
+                                  break
+                              print(chunk.decode(errors="replace"), end="")
+
+              except Exception as exc:
+                  print("Connection or identity verification failed:", exc)
+
+              print("\nRetrying in 10 seconds...")
+              time.sleep(10)
+
       volumeMounts:
         - name: svid
           mountPath: /svid
