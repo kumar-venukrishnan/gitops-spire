@@ -5,10 +5,14 @@ metadata:
   namespace: spire-demo
 spec:
   serviceAccountName: spire-demo
+  restartPolicy: Always
   containers:
     - name: inspect
-      image: ghcr.io/spiffe/spire-agent:1.15.5
-      command: ["/bin/sh", "-c", "sleep 3600"]
+      image: alpine:3.22
+      command:
+        - /bin/sh
+        - -c
+        - apk add --no-cache openssl && sleep 3600
       volumeMounts:
         - name: spiffe-workload-api
           mountPath: /run/spire/sockets
