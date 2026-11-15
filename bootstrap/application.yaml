@@ -1,3 +1,4 @@
+```yaml
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -8,31 +9,42 @@ metadata:
     app.kubernetes.io/managed-by: argocd
 spec:
   project: default
+
   destination:
     server: https://kubernetes.default.svc
     namespace: spire
+
   source:
     repoURL: https://spiffe.github.io/helm-charts-hardened/
     chart: spire
     targetRevision: 0.30.4
+
     helm:
       releaseName: spire
       values: |
-        # Lab identity namespace. Change before production and keep stable thereafter.
+        # Shared SPIRE configuration.
+        # These values must be consistent across Server and Agent.
+        global:
+          spire:
+            trustDomain: myorg.local
+            clusterName: k8s-poc
+
         spire-server:
-          clusterName: k8s-poc
-          trustDomain: myorg.local
           image:
             tag: "1.15.5"
           logLevel: info
           auditLogEnabled: true
+
           federation:
             enabled: false
+
           controllerManager:
             enabled: false
+
           persistence:
             type: pvc
             size: 1Gi
+
           resources:
             requests:
               cpu: 100m
@@ -42,11 +54,10 @@ spec:
               memory: 512Mi
 
         spire-agent:
-          clusterName: k8s-poc
-          trustDomain: myorg.local
           image:
             tag: "1.15.5"
           logLevel: info
+
           resources:
             requests:
               cpu: 100m
@@ -55,12 +66,15 @@ spec:
               cpu: 300m
               memory: 256Mi
 
-        # Keep optional components disabled for the first installation.
+        # Optional components disabled for initial PoC.
         spiffe-oidc-discovery-provider:
           enabled: false
+
         tornjak-frontend:
           enabled: false
+
   syncPolicy:
     syncOptions:
       - CreateNamespace=true
       - PruneLast=true
+```
