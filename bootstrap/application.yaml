@@ -6,6 +6,7 @@ metadata:
   labels:
     app.kubernetes.io/part-of: gitops-spire
     app.kubernetes.io/managed-by: argocd
+
 spec:
   project: default
 
@@ -22,12 +23,18 @@ spec:
       releaseName: spire
       values: |
         # Shared SPIRE configuration.
-        # These values must be consistent across Server and Agent.
+        # Keep these values consistent across Server and Agent.
         global:
+          openshift: false
           spire:
-            trustDomain: myorg.local
             clusterName: k8s-poc
+            trustDomain: myorg.local
+            caSubject:
+              country: SG
+              organization: MyOrg
+              commonName: myorg.local
 
+        # SPIRE Server configuration
         spire-server:
           image:
             tag: "1.15.5"
@@ -52,6 +59,7 @@ spec:
               cpu: 500m
               memory: 512Mi
 
+        # SPIRE Agent configuration
         spire-agent:
           image:
             tag: "1.15.5"
