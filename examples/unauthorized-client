@@ -1,0 +1,111 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: spire-mtls-unauthorized-client
+  namespace: spire-demo
+  labels:
+    app: spire-mtls-unauthorized-client
+spec:
+  serviceAccountName: spire-unauthorized
+  restartPolicy: Always
+
+  initContainers:
+    - name: fetch-svid
+      image: ghcr.io/spiffe/spire-agent:1.15.5
+      command:
+        - /opt/spire/bin/spire-agent
+      args:
+        - api
+        - fetch
+        - x509
+        - -socketPath
+        - /run/spire/sockets/spire-agent.sock
+        - -write
+        - /svid
+      volumeMounts:
+        - name: spiffe-workload-api
+          mountPath: /run/spire/sockets
+          readOnly: true
+        - name: svid
+          mountPath: /svid
+
+  containers:
+    - name: tls-client
+      image: python:3.12-alpine
+      command:
+        - python
+        - -u
+        - -c
+        - |
+          import socket
+          import ssl
+          import time
+
+          SERVER = "spire-mtls-server.spire-demo.svc.cluster.local"
+          PORT = 8443
+          EXPECTED_SERVER_ID = "spiffe://myorg.local/ns/spire-demo/sa/spire-server"
+
+          print("Unauthorized SPIRE mTLS client started", flush=True)
+
+          while True:
+              try:
+                  context = ssl.create_default_context(
+                      ssl.Purpose.SERVER_AUTH,
+                      cafile="/svid/bundle.0.pem"
+                  )
+                  context.check_hostname = False
+                  context.verify_mode = ssl.CERT_REQUIRED
+                  context.load_cert_chain(
+                      certfile="/svid/svid.0.pem",
+                      keyfile="/svid/svid.0.key"
+                  )
+
+                  with socket.create_connection((SERVER, PORT), timeout=10) as raw:
+                      with context.wrap_socket(raw, server_hostname=SERVER) as tls:
+                          cert = tls.getpeercert()
+                          identities = [
+                              value
+                              for kind, value in cert.get("subjectAltName", [])
+                              if kind == "URI"
+                          ]
+
+                          print("Server SPIFFE identities:", identities, flush=True)
+
+                          if EXPECTED_SERVER_ID not in identities:
+                              raise Exception("Unexpected server SPIFFE identity")
+
+                          print("SERVER IDENTITY VERIFIED", flush=True)
+
+                          tls.sendall(
+                              b"GET / HTTP/1.1\r\n"
+                              b"Host: spire-mtls-server\r\n"
+                              b"Connection: close\r\n\r\n"
+                          )
+
+                          response = b""
+                          while True:
+                              data = tls.recv(4096)
+                              if not data:
+                                  break
+                              response += data
+
+                          print(response.decode(errors="replace"), flush=True)
+
+              except Exception as exc:
+                  print("Connection error:", repr(exc), flush=True)
+
+              print("Retrying in 30 seconds...", flush=True)
+              time.sleep(30)
+
+      volumeMounts:
+        - name: svid
+          mountPath: /svid
+          readOnly: true
+
+  volumes:
+    - name: spiffe-workload-api
+      csi:
+        driver: csi.spiffe.io
+        readOnly: true
+    - name: svid
+      emptyDir: {}
