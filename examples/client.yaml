@@ -1,0 +1,63 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: spire-mtls-client
+  namespace: spire-demo
+  labels:
+    app: spire-mtls-client
+spec:
+  serviceAccountName: spire-client
+  initContainers:
+    - name: fetch-svid
+      image: ghcr.io/spiffe/spire-agent:1.15.5
+      command:
+        - /opt/spire/bin/spire-agent
+      args:
+        - api
+        - fetch
+        - x509
+        - -socketPath
+        - /run/spire/sockets/spire-agent.sock
+        - -write
+        - /svid
+      volumeMounts:
+        - name: spiffe-workload-api
+          mountPath: /run/spire/sockets
+          readOnly: true
+        - name: svid
+          mountPath: /svid
+
+  containers:
+    - name: tls-client
+      image: alpine:3.22
+      command:
+        - /bin/sh
+        - -c
+      args:
+        - |
+          apk add --no-cache openssl
+          while true; do
+            echo "Connecting to SPIRE mTLS server..."
+            openssl s_client \
+              -connect spire-mtls-server.spire-demo.svc.cluster.local:8443 \
+              -CAfile /svid/bundle.0.pem \
+              -cert /svid/svid.0.pem \
+              -key /svid/svid.0.key \
+              -verify_return_error \
+              -verify 1 \
+              -brief </dev/null
+            echo "Connection attempt completed. Retrying in 10 seconds..."
+            sleep 10
+          done
+      volumeMounts:
+        - name: svid
+          mountPath: /svid
+          readOnly: true
+
+  volumes:
+    - name: spiffe-workload-api
+      csi:
+        driver: csi.spiffe.io
+        readOnly: true
+    - name: svid
+      emptyDir: {}
